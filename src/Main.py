@@ -19,7 +19,7 @@ class WindowResizerApp:
         except tk.TclError:
             print("Warning: Icon file not found")
 
-        self.root.geometry("500x500")
+        self.root.geometry("500x600")
         self.root.resizable(True, False)
 
         # Check admin privileges
@@ -54,9 +54,10 @@ class WindowResizerApp:
         self.windows_tree.configure(yscrollcommand=scrollbar.set)
 
         # Resize options
-        resize_frame = ttk.LabelFrame(main_frame, text="Resize Options", padding="10")
+        resize_frame = ttk.LabelFrame(main_frame, text="Window Size and Position", padding="10")
         resize_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
 
+        # Size inputs (width and height)
         ttk.Label(resize_frame, text="Width:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.width_entry = ttk.Entry(resize_frame, width=10)
         self.width_entry.grid(row=0, column=1, sticky=tk.W, pady=5, padx=5)
@@ -65,15 +66,23 @@ class WindowResizerApp:
         self.height_entry = ttk.Entry(resize_frame, width=10)
         self.height_entry.grid(row=0, column=3, sticky=tk.W, pady=5, padx=5)
 
-        ttk.Button(resize_frame, text="Get Current Size", command=self.get_current_size).grid(row=0, column=4,
-                                                                                              sticky=tk.W, pady=5,
-                                                                                              padx=5)
+        # Position inputs (X and Y coordinates)
+        ttk.Label(resize_frame, text="X Position:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.x_entry = ttk.Entry(resize_frame, width=10)
+        self.x_entry.grid(row=1, column=1, sticky=tk.W, pady=5, padx=5)
+
+        ttk.Label(resize_frame, text="Y Position:").grid(row=1, column=2, sticky=tk.W, pady=5)
+        self.y_entry = ttk.Entry(resize_frame, width=10)
+        self.y_entry.grid(row=1, column=3, sticky=tk.W, pady=5, padx=5)
+
+        ttk.Button(resize_frame, text="Get Current Properties", command=self.get_current_properties).grid(
+            row=1, column=4, sticky=tk.W, pady=5, padx=5)
 
         # Buttons
         button_frame = ttk.Frame(main_frame)
         button_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
 
-        ttk.Button(button_frame, text="Resize Window", command=self.resize_selected_window).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Apply Changes", command=self.modify_selected_window).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Exit", command=root.destroy).pack(side=tk.RIGHT, padx=5)
 
         # Status bar
@@ -139,8 +148,8 @@ class WindowResizerApp:
 
         self.status_var.set(f"Found {len(self.windows)} window(s) for process: {process_name}")
 
-    def get_current_size(self):
-        """Get the current size of the selected window."""
+    def get_current_properties(self):
+        """Get the current properties (size and position) of the selected window."""
         selected_items = self.windows_tree.selection()
         if not selected_items:
             messagebox.showerror("Error", "Please select a window from the list")
@@ -149,7 +158,7 @@ class WindowResizerApp:
         selected_idx = int(selected_items[0])
         hwnd = self.windows[selected_idx][0]
 
-        # Get current window position
+        # Get current window position and size
         x, y, right, bottom = win32gui.GetWindowRect(hwnd)
         current_width = right - x
         current_height = bottom - y
@@ -161,51 +170,89 @@ class WindowResizerApp:
         self.height_entry.delete(0, tk.END)
         self.height_entry.insert(0, str(current_height))
 
-        self.status_var.set(f"Current window size: {current_width}x{current_height}")
+        # Set the X and Y coordinate values
+        self.x_entry.delete(0, tk.END)
+        self.x_entry.insert(0, str(x))
 
-    def resize_window(self, hwnd, width, height):
-        """Resize a window to the specified width and height."""
-        # Get current window position
-        x, y, right, bottom = win32gui.GetWindowRect(hwnd)
+        self.y_entry.delete(0, tk.END)
+        self.y_entry.insert(0, str(y))
 
-        # Resize window, keeping the same position
+        self.status_var.set(f"Current window size: {current_width}x{current_height}, Position: ({x}, {y})")
+
+    def modify_window(self, hwnd, width=None, height=None, x=None, y=None):
+        """Modify a window's size and/or position."""
+        # Get current window position and size
+        curr_x, curr_y, right, bottom = win32gui.GetWindowRect(hwnd)
+        curr_width = right - curr_x
+        curr_height = bottom - curr_y
+
+        # Use current values if new ones are not provided
+        width = width if width is not None else curr_width
+        height = height if height is not None else curr_height
+        x = x if x is not None else curr_x
+        y = y if y is not None else curr_y
+
+        # Apply changes to the window
         return win32gui.SetWindowPos(
             hwnd,
             win32con.HWND_TOP,  # z-order
             x,  # x position
             y,  # y position
-            width,  # new width
-            height,  # new height
+            width,  # width
+            height,  # height
             win32con.SWP_NOZORDER  # flags (don't change Z-order)
         )
 
-    def resize_selected_window(self):
-        """Resize the selected window with the specified dimensions."""
+    def modify_selected_window(self):
+        """Modify the selected window with the specified dimensions and position."""
         selected_items = self.windows_tree.selection()
         if not selected_items:
             messagebox.showerror("Error", "Please select a window from the list")
             return
 
         try:
-            width = int(self.width_entry.get().strip())
-            height = int(self.height_entry.get().strip())
+            # Get size values (width and height)
+            width = int(self.width_entry.get().strip()) if self.width_entry.get().strip() else None
+            height = int(self.height_entry.get().strip()) if self.height_entry.get().strip() else None
 
-            if width <= 0 or height <= 0:
-                messagebox.showerror("Error", "Width and height must be positive integers")
+            # Get position values (x and y)
+            x = int(self.x_entry.get().strip()) if self.x_entry.get().strip() else None
+            y = int(self.y_entry.get().strip()) if self.y_entry.get().strip() else None
+
+            # Validate values if provided
+            if width is not None and width <= 0:
+                messagebox.showerror("Error", "Width must be a positive integer")
+                return
+
+            if height is not None and height <= 0:
+                messagebox.showerror("Error", "Height must be a positive integer")
                 return
 
             selected_idx = int(selected_items[0])
             hwnd = self.windows[selected_idx][0]
 
-            # Resize window
-            self.resize_window(hwnd, width, height)
+            # Modify window size and position
+            self.modify_window(hwnd, width, height, x, y)
 
-            self.status_var.set(f"Window resized successfully to {width}x{height}")
+            # Construct status message
+            status_parts = []
+            if width is not None and height is not None:
+                status_parts.append(f"size: {width}x{height}")
+            if x is not None and y is not None:
+                status_parts.append(f"position: ({x}, {y})")
+
+            status_message = f"Window updated - " + ", ".join(status_parts)
+            self.status_var.set(status_message)
 
         except ValueError:
-            messagebox.showerror("Error", "Width and height must be valid integers")
+            messagebox.showerror("Error", "Width, height, X and Y values must be valid integers")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to resize window: {str(e)}")
+            messagebox.showerror("Error", f"Failed to modify window: {str(e)}")
+
+    # Legacy method for compatibility
+    def resize_selected_window(self):
+        """Legacy method redirecting to modify_selected_window."""
+        self.modify_selected_window()
 
 
 def main():
