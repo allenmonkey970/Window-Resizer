@@ -50,6 +50,7 @@ python window_resizer.py
    - Click "Get Current Properties"
    - Modify the width, height, X, or Y values
    - Click "Apply Changes"
+   - Dark Mode
 
 ## Contributing
 
