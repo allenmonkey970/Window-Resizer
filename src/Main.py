@@ -19,7 +19,7 @@ class WindowResizerApp:
         except tk.TclError:
             print("Warning: Icon file not found")
 
-        self.root.geometry("500x600")
+        self.root.geometry("700x600")
         self.root.resizable(True, False)
 
         # Check admin privileges
@@ -31,21 +31,34 @@ class WindowResizerApp:
         main_frame = ttk.Frame(root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Process name entry
-        ttk.Label(main_frame, text="Process Name:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.process_entry = ttk.Entry(main_frame, width=30)
-        self.process_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5)
-        ttk.Button(main_frame, text="Find Windows", command=self.find_windows).grid(row=0, column=2, padx=5, pady=5)
+        # Process filter frame
+        filter_frame = ttk.Frame(main_frame)
+        filter_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+
+        # Process name filter
+        ttk.Label(filter_frame, text="Filter by Process Name:").pack(side=tk.LEFT, padx=(0, 5))
+        self.process_entry = ttk.Entry(filter_frame, width=30)
+        self.process_entry.pack(side=tk.LEFT, padx=(0, 5))
+
+        ttk.Button(filter_frame, text="Apply Filter", command=self.apply_filter).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(filter_frame, text="Show All Windows", command=self.find_all_windows).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(filter_frame, text="Refresh", command=self.refresh_windows).pack(side=tk.LEFT, padx=(0, 5))
 
         # Windows list
         ttk.Label(main_frame, text="Available Windows:").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.window_list_frame = ttk.Frame(main_frame)
         self.window_list_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
 
-        # Create a treeview for windows list
-        self.windows_tree = ttk.Treeview(self.window_list_frame, columns=('title',), show='headings')
+        # Create a treeview for windows list with process information
+        self.windows_tree = ttk.Treeview(self.window_list_frame,
+                                         columns=('title', 'process_name', 'pid'),
+                                         show='headings')
         self.windows_tree.heading('title', text='Window Title')
+        self.windows_tree.heading('process_name', text='Process Name')
+        self.windows_tree.heading('pid', text='PID')
         self.windows_tree.column('title', width=350)
+        self.windows_tree.column('process_name', width=150)
+        self.windows_tree.column('pid', width=80)
         self.windows_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Add a scrollbar
@@ -93,6 +106,10 @@ class WindowResizerApp:
 
         # Store windows data
         self.windows = []
+        self.all_windows = []
+
+        # Load all windows on startup
+        self.find_all_windows()
 
     def show_admin_warning(self):
         messagebox.showwarning(
@@ -101,52 +118,79 @@ class WindowResizerApp:
             "Consider running this application as administrator if it doesn't work."
         )
 
-    def find_windows_by_process_name(self, process_name):
-        """Find all window handles for a given process name."""
-        result = []
+    def find_all_windows(self):
+        """Find all visible windows with their process information."""
+        self.status_var.set("Finding all visible windows...")
+
+        # Clear existing items in the treeview
+        for item in self.windows_tree.get_children():
+            self.windows_tree.delete(item)
+
+        self.all_windows = []
 
         # Callback function for EnumWindows
         def enum_windows_callback(hwnd, results):
             if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
                 # Get process ID for this window
                 _, process_id = win32process.GetWindowThreadProcessId(hwnd)
+                window_title = win32gui.GetWindowText(hwnd)
+
                 try:
                     # Get process name by ID
                     process = psutil.Process(process_id)
-                    if process.name().lower() == process_name.lower() or \
-                            process.name().lower() == f"{process_name.lower()}.exe":
-                        results.append((hwnd, win32gui.GetWindowText(hwnd)))
+                    process_name = process.name()
+                    results.append((hwnd, window_title, process_name, process_id))
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
+                    # If we can't get process information, still add the window
+                    results.append((hwnd, window_title, "Unknown", process_id))
+
             return True
 
-        windows = []
-        win32gui.EnumWindows(enum_windows_callback, windows)
-        return windows
+        win32gui.EnumWindows(enum_windows_callback, self.all_windows)
 
-    def find_windows(self):
-        """Find windows based on the entered process name."""
-        process_name = self.process_entry.get().strip()
+        # Update the windows list with all windows
+        self.windows = self.all_windows
+        self.update_windows_display()
+
+        self.status_var.set(f"Found {len(self.windows)} visible windows")
+
+    def apply_filter(self):
+        """Apply filter based on the entered process name."""
+        process_name = self.process_entry.get().strip().lower()
         if not process_name:
-            messagebox.showerror("Error", "Please enter a process name")
+            # If no process name is provided, show all windows
+            self.find_all_windows()
             return
 
+        # Filter windows by process name
+        self.windows = [
+            window for window in self.all_windows
+            if process_name in window[2].lower()
+        ]
+
+        # Update the display
+        self.update_windows_display()
+
+        self.status_var.set(f"Found {len(self.windows)} windows matching '{process_name}'")
+
+    def refresh_windows(self):
+        """Refresh the windows list."""
+        self.find_all_windows()
+
+        # Re-apply filter if one exists
+        process_name = self.process_entry.get().strip()
+        if process_name:
+            self.apply_filter()
+
+    def update_windows_display(self):
+        """Update the windows display in the treeview."""
         # Clear existing items in the treeview
         for item in self.windows_tree.get_children():
             self.windows_tree.delete(item)
 
-        # Find windows for the process
-        self.windows = self.find_windows_by_process_name(process_name)
-
-        if not self.windows:
-            self.status_var.set(f"No windows found for process: {process_name}")
-            return
-
         # Add windows to the treeview
-        for i, (hwnd, title) in enumerate(self.windows):
-            self.windows_tree.insert('', tk.END, values=(title,), iid=str(i))
-
-        self.status_var.set(f"Found {len(self.windows)} window(s) for process: {process_name}")
+        for i, (hwnd, title, process_name, pid) in enumerate(self.windows):
+            self.windows_tree.insert('', tk.END, values=(title, process_name, pid), iid=str(i))
 
     def get_current_properties(self):
         """Get the current properties (size and position) of the selected window."""
