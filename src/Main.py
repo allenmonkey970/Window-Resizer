@@ -6,6 +6,8 @@ import sys
 import ctypes
 import tkinter as tk
 from tkinter import ttk, messagebox
+import json
+import os
 
 
 class WindowResizerApp:
@@ -13,13 +15,26 @@ class WindowResizerApp:
         self.root = root
         self.root.title("Window Resizer")
 
+        # Configuration file path
+        self.config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+        # Default settings
+        self.settings = {
+            "dark_mode": False,
+            "window_width": 700,
+            "window_height": 600
+        }
+
+        # Load settings
+        self.load_settings()
+
         # Add icon to the window
         try:
             self.root.iconbitmap("icon.ico")
         except tk.TclError:
             print("Warning: Icon file not found")
 
-        self.root.geometry("700x600")
+        self.root.geometry(f"{self.settings['window_width']}x{self.settings['window_height']}")
         self.root.resizable(True, False)
 
         # Check admin privileges
@@ -27,13 +42,30 @@ class WindowResizerApp:
         if not self.is_admin:
             self.show_admin_warning()
 
+        # Create style object
+        self.style = ttk.Style()
+
         # Create main frame
         main_frame = ttk.Frame(root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
+        # Theme toggle frame at the top
+        theme_frame = ttk.Frame(main_frame)
+        theme_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 5))
+
+        # Theme toggle
+        self.theme_var = tk.BooleanVar(value=self.settings["dark_mode"])
+        self.theme_check = ttk.Checkbutton(
+            theme_frame,
+            text="Dark Mode",
+            variable=self.theme_var,
+            command=self.toggle_theme
+        )
+        self.theme_check.pack(side=tk.RIGHT)
+
         # Process filter frame
         filter_frame = ttk.Frame(main_frame)
-        filter_frame.grid(row=0, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        filter_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
 
         # Process name filter
         ttk.Label(filter_frame, text="Filter by Process Name:").pack(side=tk.LEFT, padx=(0, 5))
@@ -45,9 +77,9 @@ class WindowResizerApp:
         ttk.Button(filter_frame, text="Refresh", command=self.refresh_windows).pack(side=tk.LEFT, padx=(0, 5))
 
         # Windows list
-        ttk.Label(main_frame, text="Available Windows:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        ttk.Label(main_frame, text="Available Windows:").grid(row=2, column=0, sticky=tk.W, pady=5)
         self.window_list_frame = ttk.Frame(main_frame)
-        self.window_list_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        self.window_list_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
 
         # Create a treeview for windows list with process information
         self.windows_tree = ttk.Treeview(self.window_list_frame,
@@ -68,7 +100,7 @@ class WindowResizerApp:
 
         # Resize options
         resize_frame = ttk.LabelFrame(main_frame, text="Window Size and Position", padding="10")
-        resize_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        resize_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
 
         # Size inputs (width and height)
         ttk.Label(resize_frame, text="Width:").grid(row=0, column=0, sticky=tk.W, pady=5)
@@ -93,23 +125,126 @@ class WindowResizerApp:
 
         # Buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
+        button_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=10)
 
         ttk.Button(button_frame, text="Apply Changes", command=self.modify_selected_window).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Exit", command=root.destroy).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(button_frame, text="Exit", command=self.on_exit).pack(side=tk.RIGHT, padx=5)
 
         # Status bar
         self.status_var = tk.StringVar()
         self.status_var.set("Ready")
-        status_bar = ttk.Label(root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_bar = ttk.Label(root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
         # Store windows data
         self.windows = []
         self.all_windows = []
 
+        # apply theme
+        self.apply_theme()
+
         # Load all windows on startup
         self.find_all_windows()
+
+        # Register closing event
+        self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
+    def load_settings(self):
+        """Load settings from the configuration file."""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
+                    loaded_settings = json.load(f)
+                    # Update default settings with loaded values
+                    self.settings.update(loaded_settings)
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+
+    def save_settings(self):
+        """Save current settings to the configuration file."""
+        try:
+            # Update window size in settings
+            if self.root.winfo_width() > 0 and self.root.winfo_height() > 0:
+                self.settings["window_width"] = self.root.winfo_width()
+                self.settings["window_height"] = self.root.winfo_height()
+
+            # Update dark mode setting
+            self.settings["dark_mode"] = self.theme_var.get()
+
+            # Save settings to file
+            with open(self.config_file, 'w') as f:
+                json.dump(self.settings, f, indent=4)
+        except Exception as e:
+            print(f"Error saving settings: {e}")
+
+    def apply_theme(self):
+        """Apply light or dark theme to the application."""
+        if self.settings["dark_mode"]:
+            # Dark theme
+            self.style.theme_use('clam')  # base theme
+
+            # Configure colors for dark mode
+            self.style.configure('TFrame', background='#2E2E2E')
+            self.style.configure('TLabel', background='#2E2E2E', foreground='#FFFFFF')
+            self.style.configure('TButton', background='#555555', foreground='#FFFFFF')
+            self.style.configure('TCheckbutton', background='#2E2E2E', foreground='#FFFFFF')
+            self.style.configure('TLabelframe', background='#2E2E2E', foreground='#FFFFFF')
+            self.style.configure('TLabelframe.Label', background='#2E2E2E', foreground='#FFFFFF')
+            self.style.configure('TEntry', fieldbackground='#3E3E3E', foreground='#FFFFFF')
+
+            # Configure Treeview colors
+            self.style.configure('Treeview',
+                                 background='#3E3E3E',
+                                 fieldbackground='#3E3E3E',
+                                 foreground='#FFFFFF')
+            self.style.map('Treeview',
+                           background=[('selected', '#4A6984')],
+                           foreground=[('selected', '#FFFFFF')])
+
+            # Root window and menu
+            self.root.configure(background='#2E2E2E')
+
+            # Configure status bar if it exists
+            if hasattr(self, 'status_bar'):
+                self.status_bar.configure(background='#333333', foreground='#FFFFFF')
+
+        else:
+            # Light theme (default)
+            self.style.theme_use('clam')  # Reset to default
+
+            # Configure colors for light mode
+            self.style.configure('TFrame', background='#F0F0F0')
+            self.style.configure('TLabel', background='#F0F0F0', foreground='#000000')
+            self.style.configure('TButton', background='#E0E0E0', foreground='#000000')
+            self.style.configure('TCheckbutton', background='#F0F0F0', foreground='#000000')
+            self.style.configure('TLabelframe', background='#F0F0F0', foreground='#000000')
+            self.style.configure('TLabelframe.Label', background='#F0F0F0', foreground='#000000')
+            self.style.configure('TEntry', fieldbackground='#FFFFFF', foreground='#000000')
+
+            # Configure Treeview colors
+            self.style.configure('Treeview',
+                                 background='#FFFFFF',
+                                 fieldbackground='#FFFFFF',
+                                 foreground='#000000')
+            self.style.map('Treeview',
+                           background=[('selected', '#0078D7')],
+                           foreground=[('selected', '#FFFFFF')])
+
+            # Root window and menu
+            self.root.configure(background='#F0F0F0')
+
+            # Configure status bar if it exists
+            if hasattr(self, 'status_bar'):
+                self.status_bar.configure(background='#F0F0F0', foreground='#000000')
+
+    def toggle_theme(self):
+        """Toggle between light and dark theme."""
+        self.settings["dark_mode"] = self.theme_var.get()
+        self.apply_theme()
+        self.save_settings()
+
+        theme_name = "Dark" if self.settings["dark_mode"] else "Light"
+        self.status_var.set(f"{theme_name} theme applied")
 
     def show_admin_warning(self):
         messagebox.showwarning(
@@ -292,6 +427,11 @@ class WindowResizerApp:
             messagebox.showerror("Error", "Width, height, X and Y values must be valid integers")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to modify window: {str(e)}")
+
+    def on_exit(self):
+        """Handle application exit."""
+        self.save_settings()
+        self.root.destroy()
 
     # Legacy method for compatibility
     def resize_selected_window(self):
