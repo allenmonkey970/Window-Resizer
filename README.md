@@ -12,7 +12,7 @@ A Python application that allows you to view all visible windows and resize them
 
 ## Screenshots
 
-(Add screenshots of your application here)
+<img src="https://github.com/allenmonkey970/Window-Resizer/blob/main/Screenshot%202025-05-06%20231554.png" alt="Window Resizer Screenshot" width="700">
 
 ## Requirements
 
