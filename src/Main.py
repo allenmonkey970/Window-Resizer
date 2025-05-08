@@ -293,7 +293,7 @@ class WindowResizerApp:
         """Apply filter based on the entered process name."""
         process_name = self.process_entry.get().strip().lower()
         if not process_name:
-            # If no process name is provided, show all windows
+            # If no process name is provided show all windows
             self.find_all_windows()
             return
 
